@@ -1,0 +1,158 @@
+-- Tabla de Departamentos
+CREATE TABLE departamentos(id_departamento NUMBER(4) PRIMARY KEY,nombre_departamento VARCHAR2(30) NOT NULL);
+
+-- Tabla de Cargos
+CREATE TABLE cargos(id_cargo NUMBER(4) PRIMARY KEY,descripcion_cargo VARCHAR2(35) NOT NULL);
+
+-- Tabla de Empleados
+CREATE TABLE empleados(id_empleado NUMBER(6) PRIMARY KEY,nombre VARCHAR2(20) NOT NULL,apellido VARCHAR2(25) NOT NULL,
+telefono VARCHAR2(20),
+fecha_contratacion DATE NOT NULL,
+salario NUMBER(8,2),
+id_cargo NUMBER(10) NOT NULL,
+id_departamento NUMBER(4) NOT NULL,
+CONSTRAINT fk_departamento FOREIGN KEY (id_departamento) REFERENCES departamentos(id_departamento),
+CONSTRAINT fk_cargo FOREIGN KEY (id_cargo) REFERENCES cargos(id_cargo)
+);
+
+-- traer totas las tablas 
+SELECT table_name 
+FROM user_tables;  -- Para tablas del usuario actual
+
+-- Eliminar tablas 
+DROP TABLE nombre_tabla;
+
+
+-- Insertar datos en la tabla departamentos
+INSERT INTO departamentos (id_departamento, nombre_departamento) VALUES (10, 'Ventas');
+INSERT INTO departamentos (id_departamento, nombre_departamento) VALUES (20, 'TI');
+INSERT INTO departamentos (id_departamento, nombre_departamento) VALUES (30, 'Recursos Humanos');
+
+-- Insertar datos en la tabla cargos
+INSERT INTO cargos (id_cargo, descripcion_cargo) VALUES ('1', 'Vendedor');
+INSERT INTO cargos (id_cargo, descripcion_cargo) VALUES ('2', 'Gerente');
+INSERT INTO cargos (id_cargo, descripcion_cargo) VALUES ('3', 'Analista');
+
+-- Insertar datos en la tabla empleados
+INSERT INTO empleados (id_empleado, nombre, apellido, telefono, fecha_contratacion, salario, id_cargo, id_departamento)
+VALUES (1001, 'Juan', 'Pérez', '555-1234', TO_DATE('15/01/2020', 'DD/MM/YYYY'), 2500.00, '1', 10);
+
+INSERT INTO empleados (id_empleado, nombre, apellido, telefono, fecha_contratacion, salario, id_cargo, id_departamento)
+VALUES (1002, 'María', 'Gómez', '555-5678', TO_DATE('22/05/2019', 'DD/MM/YYYY'), 3500.00, '2', 20);
+
+INSERT INTO empleados (id_empleado, nombre, apellido, telefono, fecha_contratacion, salario, id_cargo, id_departamento)
+VALUES (1003, 'Carlos', 'López', '555-9012', TO_DATE('10/11/2021', 'DD/MM/YYYY'), 3000.00, '3', 30);
+
+
+-- Consulta SQL que recuperaría los datos
+
+SELECT 
+    e.id_empleado,
+    e.nombre || ' ' || e.apellido AS nombre_completo,
+    e.fecha_contratacion,
+    e.salario,
+    d.id_departamento,
+    d.nombre_departamento
+FROM 
+    empleados e
+JOIN 
+    departamentos d ON e.id_departamento = d.id_departamento;
+
+	
+-- Registrar Esquema en BD
+BEGIN
+    DBMS_XMLSCHEMA.registerSchema(
+        schemaurl => 'empleados_departamentos.xsd',
+        schemadoc => '<?xml version="1.0"?>
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+		
+		-- se agrega el esquema de acuerdo a la BD 
+		
+		    
+			<xs:element name="empleados">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="empleado" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="id" type="xs:integer"/>
+									<xs:element name="nombre_completo" type="xs:string"/>
+									<xs:element name="fecha_contratacion" type="xs:date"/>
+									<xs:element name="salario" type="xs:decimal"/>
+									<xs:element name="departamento_id" type="xs:integer"/>
+									<xs:element name="departamento_nombre" type="xs:string"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		
+		
+		</xs:schema>',
+        local => TRUE,
+        gentypes => TRUE,
+        genbean => FALSE,
+        gentables => FALSE
+    );
+END;
+/
+
+-- Crear una Vista XML
+
+CREATE OR REPLACE VIEW vista_xml_empleados AS
+SELECT 
+    XMLELEMENT("empleados",
+        XMLAGG(
+            XMLELEMENT("empleado",
+                XMLFOREST(
+                    e.id_empleado AS "id",
+                    e.nombre || ' ' || e.apellido AS "nombre_completo",
+                    TO_CHAR(e.fecha_contratacion, 'YYYY-MM-DD') AS "fecha_contratacion",
+                    e.salario AS "salario",
+                    d.id_departamento AS "departamento_id",
+                    d.nombre_departamento AS "departamento_nombre"
+                )
+            )
+        )
+    ) AS xml_data
+FROM 
+    empleados e, 
+    departamentos d
+WHERE 
+    e.id_departamento = d.id_departamento;
+    
+--Consultar los Datos XML
+
+SELECT xml_data FROM vista_xml_empleados;
+
+--extraer datos específicos del XML:
+
+SELECT 
+    EXTRACTVALUE(xml_data, '/empleados/empleado[2]/nombre_completo') AS primer_empleado
+FROM 
+    vista_xml_empleados;
+    
+
+-- Opción crear SQL/XML con DBMS_XMLGEN
+
+
+DECLARE
+    ctx dbms_xmlgen.ctxHandle;
+    resultado CLOB;
+BEGIN
+    ctx := dbms_xmlgen.newContext(
+        'SELECT e.id_empleado, e.nombre||'' ''||e.apellido as nombre_completo, 
+                e.fecha_contratacion, e.salario,
+                d.id_departamento, d.nombre_departamento
+         FROM empleados e JOIN departamentos d ON e.id_departamento = d.id_departamento');
+    
+    dbms_xmlgen.setRowSetTag(ctx, 'empleados_departamentos');
+    dbms_xmlgen.setRowTag(ctx, 'empleado');
+    
+    resultado := dbms_xmlgen.getXML(ctx);
+    dbms_output.put_line(resultado);
+    
+    dbms_xmlgen.closeContext(ctx);
+END;
+/
